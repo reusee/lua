@@ -102,8 +102,11 @@ func TestFunc(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// bad args TODO not testable
-	// _, err = l.Eval(`bar(42)`)
+	// bad args
+	_, err = l.Eval(`bar(42)`)
+	if err == nil {
+		t.Fatalf("allowing bad args")
+	}
 }
 
 func TestEval(t *testing.T) {

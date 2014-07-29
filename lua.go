@@ -210,21 +210,15 @@ func invokeGoFunc(state *C.lua_State) int {
 	// check args
 	argc := C.lua_gettop(state)
 	if int(argc) != function.argc {
-		//TODO not elegant
-		C.lua_pushstring(state,
-			C.CString(fmt.Sprintf("%s: number of arguments not match", function.name)))
-		C.lua_error(state)
-		return 0
+		// Lua.Eval will recover
+		panic(fmt.Errorf("%s: number of arguments not match", function.name))
 	}
 	// prepare args
 	var args []reflect.Value
 	for i := C.int(1); i <= argc; i++ {
 		goValue, err := function.lua.toGoValue(i, function.funcType.In(int(i-1)))
 		if err != nil {
-			//TODO not elegant
-			C.lua_pushstring(state,
-				C.CString(fmt.Sprintf("%s: toGoValue error %v", err)))
-			C.lua_error(state)
+			panic(fmt.Errorf("%s: toGoValue error %v", err))
 		}
 		args = append(args, goValue)
 	}
@@ -237,12 +231,17 @@ func invokeGoFunc(state *C.lua_State) int {
 }
 
 func (l *Lua) Eval(code string) (returns []interface{}, err error) {
+	defer func() {
+		if e := recover(); e != nil {
+			returns = nil
+			err = e.(error)
+		}
+	}()
 	curTop := C.lua_gettop(l.State)
 	cCode := cstr(code)
 	if ret := C.luaL_loadstring(l.State, cCode); ret != 0 { // load error
 		return nil, fmt.Errorf("%s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
 	}
-	//TODO set a errfunc to collect traceback?
 	if ret := C.lua_pcall(l.State, 0, C.LUA_MULTRET, 0); ret != 0 {
 		// error occured
 		return nil, fmt.Errorf("%s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
