@@ -261,6 +261,14 @@ func (l *Lua) Eval(code string) (returns []interface{}, err error) {
 	return
 }
 
+func (l *Lua) MustEval(code string) []interface{} {
+	ret, err := l.Eval(code)
+	if err != nil {
+		panic(err)
+	}
+	return ret
+}
+
 var stringType = reflect.TypeOf("")
 var intType = reflect.TypeOf(int(0))
 var floatType = reflect.TypeOf(float64(0))
