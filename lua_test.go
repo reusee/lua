@@ -1,6 +1,7 @@
 package lua
 
 import (
+	"fmt"
 	"testing"
 	"unsafe"
 )
@@ -106,6 +107,18 @@ func TestFunc(t *testing.T) {
 	_, err = l.Eval(`bar(42)`)
 	if err == nil {
 		t.Fatalf("allowing bad args")
+	}
+
+	// stack trace
+	_, err = l.Eval(`
+	(function()
+		(function()
+			error(42)
+		end)()
+	end)()
+	`)
+	if err != nil {
+		fmt.Printf("%v\n", err)
 	}
 }
 

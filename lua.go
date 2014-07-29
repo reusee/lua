@@ -7,6 +7,7 @@ package lua
 #include <string.h>
 
 void push_go_func(lua_State*, void*);
+void push_errfunc(lua_State*);
 
 #cgo pkg-config: luajit
 */
@@ -237,12 +238,13 @@ func (l *Lua) Eval(code string) (returns []interface{}, err error) {
 			err = e.(error)
 		}
 	}()
+	C.push_errfunc(l.State)
 	curTop := C.lua_gettop(l.State)
 	cCode := cstr(code)
 	if ret := C.luaL_loadstring(l.State, cCode); ret != 0 { // load error
 		return nil, fmt.Errorf("%s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
 	}
-	if ret := C.lua_pcall(l.State, 0, C.LUA_MULTRET, 0); ret != 0 {
+	if ret := C.lua_pcall(l.State, 0, C.LUA_MULTRET, C.lua_gettop(l.State)-1); ret != 0 {
 		// error occured
 		return nil, fmt.Errorf("%s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
 	} else {
