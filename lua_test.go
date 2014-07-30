@@ -335,3 +335,79 @@ func TestSetPointer(t *testing.T) {
 		t.Fatal("P is not point to 42")
 	}
 }
+
+func TestCall(t *testing.T) {
+	l, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	// call
+	l.Set("foo", func(i int, s string, b bool) (bool, int, string) {
+		return b, i, s
+	})
+	ret, err := l.Pcall("foo", 42, "foobar", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ret) != 3 {
+		t.Fatalf("number of returns not match")
+	}
+	if ret[0].(bool) != true {
+		t.Fatalf("0 is not true")
+	}
+	if ret[1].(float64) != 42 {
+		t.Fatalf("1 is not 42")
+	}
+	if ret[2].(string) != "foobar" {
+		t.Fatalf("2 is not foobar")
+	}
+
+	// bad argument number
+	_, err = l.Pcall("foo", 42)
+	if err == nil {
+		t.Fatalf("allowing bad call")
+	}
+
+	// bad argument type
+	_, err = l.Pcall("foo", true, 42, "justwe")
+	if err == nil {
+		t.Fatalf("allowing bad argument type")
+	}
+
+	// bad function
+	_, err = l.Pcall("bar")
+	if err == nil {
+		t.Fatalf("allowing bad function")
+	}
+
+	// bad function
+	_, err = l.Pcall("foo.bar.baz")
+	if err == nil {
+		t.Fatalf("allowing bad function path")
+	}
+
+	// call
+	l.Eval(`
+	baz = {
+		bar = {
+			foo = function()
+				error('foo error')
+			end,
+			bar = function(n)
+				return n * 2
+			end,
+		}
+	}
+	`)
+	_, err = l.Pcall("baz.bar.foo")
+	if err == nil || !strings.Contains(err.Error(), "foo error") {
+		t.Fatalf("allowing error")
+	}
+
+	// call
+	if l.Call("baz.bar.bar", 42)[0].(float64) != 84 {
+		t.Fatalf("return is not 84")
+	}
+}

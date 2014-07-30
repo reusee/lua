@@ -96,14 +96,14 @@ func (l *Lua) set(fullname string, v interface{}) error {
 			}
 		} else { // sub namespace
 			C.lua_pushstring(l.State, cNamespace)
-			C.lua_rawget(l.State, -2)
+			C.lua_gettable(l.State, -2)
 			if t := C.lua_type(l.State, -1); t == C.LUA_TNIL { // not exists, create new
 				C.lua_settop(l.State, -2)
 				C.lua_pushstring(l.State, cNamespace)
 				C.lua_createtable(l.State, 0, 0)
 				C.lua_rawset(l.State, -3)
 				C.lua_pushstring(l.State, cNamespace) // set as current namespace
-				C.lua_rawget(l.State, -2)
+				C.lua_gettable(l.State, -2)
 			} else if t != C.LUA_TTABLE { // not a table
 				return fmt.Errorf("namespace %s is not a table", strings.Join(path[:i+1], "."))
 			}
@@ -254,13 +254,13 @@ func invokeGoFunc(state *C.lua_State) int {
 
 // evaluate lua code. no panic when error occur.
 func (l *Lua) Peval(code string) (returns []interface{}, err error) {
-	l.err = nil
 	C.push_errfunc(l.State)
 	curTop := C.lua_gettop(l.State)
 	cCode := cstr(code)
 	if ret := C.luaL_loadstring(l.State, cCode); ret != 0 { // load error
 		return nil, fmt.Errorf("LOAD ERROR: %s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
 	}
+	l.err = nil
 	if ret := C.lua_pcall(l.State, 0, C.LUA_MULTRET, -2); ret != 0 {
 		// error occured
 		return nil, fmt.Errorf("CALL ERROR: %s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
@@ -416,6 +416,61 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret reflect.Value, err
 		return
 	}
 	return
+}
+
+func (l *Lua) Pcall(fullname string, args ...interface{}) ([]interface{}, error) {
+	C.push_errfunc(l.State)
+	curTop := C.lua_gettop(l.State)
+	// get function
+	path := strings.Split(fullname, ".")
+	for i, name := range path {
+		if i == 0 {
+			C.lua_getfield(l.State, C.LUA_GLOBALSINDEX, cstr(name))
+		} else {
+			if C.lua_type(l.State, -1) != C.LUA_TTABLE {
+				return nil, fmt.Errorf("%s is not a function", fullname)
+			}
+			C.lua_pushstring(l.State, cstr(name))
+			C.lua_gettable(l.State, -2)
+			C.lua_remove(l.State, -2) // remove table
+		}
+	}
+	if C.lua_type(l.State, -1) != C.LUA_TFUNCTION {
+		return nil, fmt.Errorf("%s is not a function", fullname)
+	}
+	// args
+	for _, arg := range args {
+		l.pushGoValue(arg, "")
+	}
+	// call
+	l.err = nil
+	if ret := C.lua_pcall(l.State, C.int(len(args)), C.LUA_MULTRET, C.int(-(len(args))-2)); ret != 0 {
+		// error occured
+		return nil, fmt.Errorf("CALL ERROR: %s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
+	} else if l.err != nil { // error raise by invokeGoFunc
+		return nil, l.err
+	} else {
+		// return values
+		nReturn := C.lua_gettop(l.State) - curTop
+		returns := make([]interface{}, int(nReturn))
+		for i := C.int(0); i < nReturn; i++ {
+			value, err := l.toGoValue(-1-i, interfaceType)
+			if err != nil {
+				return nil, err
+			}
+			returns[int(nReturn-1-i)] = value.Interface()
+		}
+		return returns, nil
+	}
+	return nil, nil
+}
+
+func (l *Lua) Call(fullname string, args ...interface{}) []interface{} {
+	ret, err := l.Pcall(fullname, args...)
+	if err != nil {
+		panic(err)
+	}
+	return ret
 }
 
 func (l *Lua) Close() {
