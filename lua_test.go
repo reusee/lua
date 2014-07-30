@@ -23,31 +23,31 @@ func TestSet(t *testing.T) {
 	defer l.Close()
 
 	// wrong args
-	err = l.Set(nil, nil)
+	err = l.Pset(nil, nil)
 	if err == nil {
 		t.Fatal("allowing non-string name")
 	}
-	err = l.Set("foo")
+	err = l.Pset("foo")
 	if err == nil {
 		t.Fatal("allowing wrong number of arguments")
 	}
 
 	// namespace
-	err = l.Set("foo.bar.baz", func() {})
+	err = l.Pset("foo.bar.baz", func() {})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// bad namespace
-	l.Set("i", 5)
-	err = l.Set("i.foo", 5)
+	l.Pset("i", 5)
+	err = l.Pset("i.foo", 5)
 	if err == nil {
 		t.Fatalf("allowing bad global namespace")
 	}
 
 	// bad namespace
-	l.Set("a.b", 5)
-	err = l.Set("a.b.c", 5)
+	l.Pset("a.b", 5)
+	err = l.Pset("a.b.c", 5)
 	if err == nil {
 		t.Fatalf("allowing bad namespace")
 	}
@@ -61,23 +61,23 @@ func TestFunc(t *testing.T) {
 	defer l.Close()
 
 	// variadic func
-	err = l.Set("foo", func(args ...int) {})
+	err = l.Pset("foo", func(args ...int) {})
 	if err == nil {
 		t.Fatalf("allowing variadic func")
 	}
 
 	// invoke
-	err = l.Set("foo", func() {})
+	err = l.Pset("foo", func() {})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = l.Eval("foo()")
+	_, err = l.Peval("foo()")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// args
-	l.Set("bar", func(i int, s string, b bool) {
+	l.Pset("bar", func(i int, s string, b bool) {
 		if i != 42 {
 			t.Fatalf("i is not 42")
 		}
@@ -88,13 +88,13 @@ func TestFunc(t *testing.T) {
 			t.Fatalf("b is not true")
 		}
 	})
-	l.Eval(`bar(42, 'foobar', true)`)
+	l.Peval(`bar(42, 'foobar', true)`)
 
 	// return
-	l.Set("baz", func() (int, string, bool) {
+	l.Pset("baz", func() (int, string, bool) {
 		return 42, "foobar", true
 	})
-	_, err = l.Eval(`
+	_, err = l.Peval(`
 	i, s, b = baz()
 	if i ~= 42 then error('i is not 42') end
 	if s ~= 'foobar' then error('s is not foobar') end
@@ -105,7 +105,7 @@ func TestFunc(t *testing.T) {
 	}
 
 	// bad args
-	_, err = l.Eval(`
+	_, err = l.Peval(`
 	(function()
 		(function()
 			bar(42)
@@ -122,11 +122,11 @@ func TestFunc(t *testing.T) {
 	}
 
 	// stack trace
-	l.Eval(`bar(42)`)
-	l.Eval(`bar(42)`)
-	l.Eval(`bar(42)`)
-	l.Eval(`bar(42)`)
-	_, err = l.Eval(`
+	l.Peval(`bar(42)`)
+	l.Peval(`bar(42)`)
+	l.Peval(`bar(42)`)
+	l.Peval(`bar(42)`)
+	_, err = l.Peval(`
 		(function()
 			(function()
 				error('Error, Error, Error.')
@@ -151,19 +151,19 @@ func TestEval(t *testing.T) {
 	defer l.Close()
 
 	// bad code
-	_, err = l.Eval("foobar 1, 2, 3")
+	_, err = l.Peval("foobar 1, 2, 3")
 	if err == nil {
 		t.Fatalf("allowing bad code")
 	}
 
 	// runtime error
-	_, err = l.Eval("error(42)")
+	_, err = l.Peval("error(42)")
 	if err == nil {
 		t.Fatalf("allowing runtime error")
 	}
 
 	// return
-	ret, err := l.Eval("return 42")
+	ret, err := l.Peval("return 42")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestEval(t *testing.T) {
 	}
 
 	// return
-	ret, err = l.Eval(`return 'foobar', 42, true`)
+	ret, err = l.Peval(`return 'foobar', 42, true`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,14 +201,14 @@ func TestSetBool(t *testing.T) {
 	}
 	defer l.Close()
 
-	l.Set("T", true)
-	ret, err := l.Eval("return T")
+	l.Pset("T", true)
+	ret, err := l.Peval("return T")
 	if err != nil || ret[0].(bool) != true {
 		t.Fatalf("T is not true")
 	}
 
-	l.Set("F", false)
-	ret, err = l.Eval("return F")
+	l.Pset("F", false)
+	ret, err = l.Peval("return F")
 	if err != nil || ret[0].(bool) != false {
 		t.Fatalf("F is not false")
 	}
@@ -221,8 +221,8 @@ func TestSetString(t *testing.T) {
 	}
 	defer l.Close()
 
-	l.Set("S", "foobarbaz")
-	ret, err := l.Eval("return S")
+	l.Pset("S", "foobarbaz")
+	ret, err := l.Peval("return S")
 	if err != nil || ret[0].(string) != "foobarbaz" {
 		t.Fatalf("S is not foobarbaz")
 	}
@@ -235,20 +235,20 @@ func TestSetNumber(t *testing.T) {
 	}
 	defer l.Close()
 
-	l.Set("I", int64(42))
-	ret, err := l.Eval("return I")
+	l.Pset("I", int64(42))
+	ret, err := l.Peval("return I")
 	if err != nil || ret[0].(float64) != 42 {
 		t.Fatalf("I is not 42")
 	}
 
-	l.Set("U", uint16(42))
-	ret, err = l.Eval("return U")
+	l.Pset("U", uint16(42))
+	ret, err = l.Peval("return U")
 	if err != nil || ret[0].(float64) != 42 {
 		t.Fatalf("U is not 42")
 	}
 
-	l.Set("F", float64(42))
-	ret, err = l.Eval("return F")
+	l.Pset("F", float64(42))
+	ret, err = l.Peval("return F")
 	if err != nil || ret[0].(float64) != 42 {
 		t.Fatalf("F is not 42")
 	}
@@ -261,8 +261,8 @@ func TestSetSlice(t *testing.T) {
 	}
 	defer l.Close()
 
-	l.Set("Ints", []int{5, 3, 2, 1, 4})
-	_, err = l.Eval(`
+	l.Pset("Ints", []int{5, 3, 2, 1, 4})
+	_, err = l.Peval(`
 	if Ints[1] ~= 5 then error('1 is not 5') end
 	if Ints[2] ~= 3 then error('2 is not 3') end
 	if Ints[3] ~= 2 then error('3 is not 2') end
@@ -273,8 +273,8 @@ func TestSetSlice(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	l.Set("Vals", []interface{}{"foobar", 42, true})
-	_, err = l.Eval(`
+	l.Pset("Vals", []interface{}{"foobar", 42, true})
+	_, err = l.Peval(`
 	if Vals[1] ~= 'foobar' then error('1 is not foobar') end
 	if Vals[2] ~= 42 then error('2 is not 42') end
 	if Vals[3] ~= true then error('3 is not true') end
@@ -293,8 +293,8 @@ func TestSetUnsafePointer(t *testing.T) {
 
 	i := 42
 	p := unsafe.Pointer(&i)
-	l.Set("P", p)
-	ret, err := l.Eval("return P")
+	l.Pset("P", p)
+	ret, err := l.Peval("return P")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,8 +312,8 @@ func TestSetInterface(t *testing.T) {
 
 	var i interface{}
 	i = "foobarbaz"
-	l.Set("I", i)
-	_, err = l.Eval(`
+	l.Pset("I", i)
+	_, err = l.Peval(`
 	if I ~= "foobarbaz" then error('I is not foobarbaz') end
 	`)
 	if err != nil {
@@ -329,8 +329,8 @@ func TestSetPointer(t *testing.T) {
 	defer l.Close()
 
 	i := 42
-	l.Set("P", &i)
-	ret, err := l.Eval("return P")
+	l.Pset("P", &i)
+	ret, err := l.Peval("return P")
 	if err != nil || *((*int)(ret[0].(unsafe.Pointer))) != 42 {
 		t.Fatal("P is not point to 42")
 	}

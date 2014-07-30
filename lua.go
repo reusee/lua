@@ -21,11 +21,11 @@ import (
 
 type Lua struct {
 	State *C.lua_State
-	funcs []*Function
-	err error
+	funcs []*_Function
+	err   error
 }
 
-type Function struct {
+type _Function struct {
 	name      string
 	lua       *Lua
 	fun       interface{}
@@ -46,7 +46,8 @@ func New() (*Lua, error) {
 	return lua, nil
 }
 
-func (l *Lua) Set(args ...interface{}) error {
+// set lua variable. no panic when error occur.
+func (l *Lua) Pset(args ...interface{}) error {
 	if len(args)%2 != 0 {
 		return fmt.Errorf("number of arguments not match, check your program.")
 	}
@@ -61,6 +62,14 @@ func (l *Lua) Set(args ...interface{}) error {
 		}
 	}
 	return nil
+}
+
+// set lua variable. panic if error occur.
+func (l *Lua) Set(args ...interface{}) {
+	err := l.Pset(args...)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (l *Lua) set(fullname string, v interface{}) error {
@@ -162,7 +171,7 @@ func (l *Lua) pushGoValue(v interface{}, name string) error {
 			if valueType.IsVariadic() {
 				return fmt.Errorf("variadic function is not supported, %s", name)
 			}
-			function := &Function{
+			function := &_Function{
 				name:      name,
 				lua:       l,
 				fun:       v,
@@ -209,7 +218,7 @@ func (l *Lua) getStackTraceback() string {
 //export invokeGoFunc
 func invokeGoFunc(state *C.lua_State) int {
 	p := C.lua_touserdata(state, C.LUA_GLOBALSINDEX-1)
-	function := (*Function)(p)
+	function := (*_Function)(p)
 	// fast paths
 	switch f := function.fun.(type) {
 	case func():
@@ -243,7 +252,8 @@ func invokeGoFunc(state *C.lua_State) int {
 	return len(returnValues)
 }
 
-func (l *Lua) Eval(code string) (returns []interface{}, err error) {
+// evaluate lua code. no panic when error occur.
+func (l *Lua) Peval(code string) (returns []interface{}, err error) {
 	l.err = nil
 	C.push_errfunc(l.State)
 	curTop := C.lua_gettop(l.State)
@@ -271,8 +281,9 @@ func (l *Lua) Eval(code string) (returns []interface{}, err error) {
 	return
 }
 
-func (l *Lua) MustEval(code string) []interface{} {
-	ret, err := l.Eval(code)
+// evaluate lua code. panic if error occur.
+func (l *Lua) Eval(code string) []interface{} {
+	ret, err := l.Peval(code)
 	if err != nil {
 		panic(err)
 	}
