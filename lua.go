@@ -269,6 +269,9 @@ func (l *Lua) Peval(code string) (returns []interface{}, err error) {
 	} else {
 		// return values
 		nReturn := C.lua_gettop(l.State) - curTop
+		if nReturn < 0 {
+			return nil, fmt.Errorf("wrong number of return values. corrupted stack.")
+		}
 		returns = make([]interface{}, int(nReturn))
 		for i := C.int(0); i < nReturn; i++ {
 			value, err := l.toGoValue(-1-i, interfaceType)
@@ -452,6 +455,9 @@ func (l *Lua) Pcall(fullname string, args ...interface{}) ([]interface{}, error)
 	} else {
 		// return values
 		nReturn := C.lua_gettop(l.State) - curTop
+		if nReturn < 0 {
+			return nil, fmt.Errorf("wrong number of return values. corrupted stack.")
+		}
 		returns := make([]interface{}, int(nReturn))
 		for i := C.int(0); i < nReturn; i++ {
 			value, err := l.toGoValue(-1-i, interfaceType)

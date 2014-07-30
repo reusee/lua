@@ -410,4 +410,18 @@ func TestCall(t *testing.T) {
 	if l.Call("baz.bar.bar", 42)[0].(float64) != 84 {
 		t.Fatalf("return is not 84")
 	}
+
+	// call
+	l.Eval(`
+	function get()
+		return 42
+	end
+	function set(n)
+		return n * 2
+	end
+	`)
+	ret, err = l.Pcall("set", l.Call("get")[0].(float64))
+	if err != nil || ret[0].(float64) != 84 {
+		t.Fatalf("result error")
+	}
 }
