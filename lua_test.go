@@ -2,6 +2,7 @@ package lua
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"unsafe"
 )
@@ -104,21 +105,42 @@ func TestFunc(t *testing.T) {
 	}
 
 	// bad args
-	_, err = l.Eval(`bar(42)`)
-	if err == nil {
-		t.Fatalf("allowing bad args")
-	}
-
-	// stack trace
 	_, err = l.Eval(`
 	(function()
 		(function()
-			error(42)
+			bar(42)
 		end)()
 	end)()
 	`)
-	if err != nil {
-		fmt.Printf("%v\n", err)
+	if err == nil {
+		t.Fatalf("allowing bad args")
+	}
+	msg := fmt.Sprintf("%s", err)
+	if !strings.Contains(msg, "number of arguments not match") || !strings.Contains(msg, "stack traceback:") {
+		fmt.Printf("%s\n", msg)
+		t.Fatalf("incorrect error message")
+	}
+
+	// stack trace
+	l.Eval(`bar(42)`)
+	l.Eval(`bar(42)`)
+	l.Eval(`bar(42)`)
+	l.Eval(`bar(42)`)
+	_, err = l.Eval(`
+		(function()
+			(function()
+				error('Error, Error, Error.')
+			end)()
+		end)()
+		`)
+	if err == nil {
+		t.Fatalf("allowing error()")
+	}
+	msg = fmt.Sprintf("%s", err)
+	fmt.Printf("%s\n", msg)
+	if !strings.Contains(msg, "Error, Error, Error.") || !strings.Contains(msg, "stack traceback:") {
+		fmt.Printf("%s\n", msg)
+		t.Fatalf("incorrect error message")
 	}
 }
 

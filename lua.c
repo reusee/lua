@@ -8,9 +8,12 @@ void push_go_func(lua_State *l, void* func) {
 }
 
 int traceback(lua_State *l) {
+  lua_pushstring(l, "\n"); // separate error message and traceback
   lua_getfield(l, LUA_GLOBALSINDEX, "debug");
   lua_getfield(l, -1, "traceback");
   lua_call(l, 0, 1);
+  lua_remove(l, -2); // remove debug table from stack
+  lua_concat(l, 3); // concat origin error message
   return 1;
 }
 

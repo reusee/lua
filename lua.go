@@ -198,6 +198,13 @@ func (l *Lua) pushGoValue(v interface{}, name string) error {
 	return nil
 }
 
+func (l *Lua) getStackTraceback() string {
+	C.lua_getfield(l.State, C.LUA_GLOBALSINDEX, cstr("debug"))
+	C.lua_getfield(l.State, -1, cstr("traceback"))
+	C.lua_call(l.State, 0, 1)
+	return C.GoString(C.lua_tolstring(l.State, -1, nil))
+}
+
 //export invokeGoFunc
 func invokeGoFunc(state *C.lua_State) int {
 	p := C.lua_touserdata(state, C.LUA_GLOBALSINDEX-1)
@@ -212,14 +219,18 @@ func invokeGoFunc(state *C.lua_State) int {
 	argc := C.lua_gettop(state)
 	if int(argc) != function.argc {
 		// Lua.Eval will recover
-		panic(fmt.Errorf("%s: number of arguments not match", function.name))
+		//TODO clear call stack
+		panic(fmt.Errorf("%s: number of arguments not match\n%s", function.name,
+			function.lua.getStackTraceback()))
 	}
 	// prepare args
 	var args []reflect.Value
 	for i := C.int(1); i <= argc; i++ {
 		goValue, err := function.lua.toGoValue(i, function.funcType.In(int(i-1)))
 		if err != nil {
-			panic(fmt.Errorf("%s: toGoValue error %v", err))
+		//TODO clear call stack
+			panic(fmt.Errorf("%s: toGoValue error %v\n%s", err,
+				function.lua.getStackTraceback()))
 		}
 		args = append(args, goValue)
 	}
@@ -242,11 +253,11 @@ func (l *Lua) Eval(code string) (returns []interface{}, err error) {
 	curTop := C.lua_gettop(l.State)
 	cCode := cstr(code)
 	if ret := C.luaL_loadstring(l.State, cCode); ret != 0 { // load error
-		return nil, fmt.Errorf("%s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
+		return nil, fmt.Errorf("LOAD ERROR: %s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
 	}
-	if ret := C.lua_pcall(l.State, 0, C.LUA_MULTRET, C.lua_gettop(l.State)-1); ret != 0 {
+	if ret := C.lua_pcall(l.State, 0, C.LUA_MULTRET, -2); ret != 0 {
 		// error occured
-		return nil, fmt.Errorf("%s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
+		return nil, fmt.Errorf("CALL ERROR: %s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
 	} else {
 		// return values
 		nReturn := C.lua_gettop(l.State) - curTop
