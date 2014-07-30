@@ -137,7 +137,6 @@ func TestFunc(t *testing.T) {
 		t.Fatalf("allowing error()")
 	}
 	msg = fmt.Sprintf("%s", err)
-	fmt.Printf("%s\n", msg)
 	if !strings.Contains(msg, "Error, Error, Error.") || !strings.Contains(msg, "stack traceback:") {
 		fmt.Printf("%s\n", msg)
 		t.Fatalf("incorrect error message")

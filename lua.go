@@ -22,6 +22,7 @@ import (
 type Lua struct {
 	State *C.lua_State
 	funcs []*Function
+	err error
 }
 
 type Function struct {
@@ -218,19 +219,19 @@ func invokeGoFunc(state *C.lua_State) int {
 	// check args
 	argc := C.lua_gettop(state)
 	if int(argc) != function.argc {
-		// Lua.Eval will recover
-		//TODO clear call stack
-		panic(fmt.Errorf("%s: number of arguments not match\n%s", function.name,
-			function.lua.getStackTraceback()))
+		// Lua.Eval will check err
+		function.lua.err = fmt.Errorf("CALL ERROR: number of arguments not match: %s\n%s",
+			function.name, function.lua.getStackTraceback())
+		return 0
 	}
 	// prepare args
 	var args []reflect.Value
 	for i := C.int(1); i <= argc; i++ {
 		goValue, err := function.lua.toGoValue(i, function.funcType.In(int(i-1)))
 		if err != nil {
-		//TODO clear call stack
-			panic(fmt.Errorf("%s: toGoValue error %v\n%s", err,
-				function.lua.getStackTraceback()))
+			function.lua.err = fmt.Errorf("CALL ERROR: toGoValue error: %v\n%s",
+				err, function.lua.getStackTraceback())
+			return 0
 		}
 		args = append(args, goValue)
 	}
@@ -243,12 +244,7 @@ func invokeGoFunc(state *C.lua_State) int {
 }
 
 func (l *Lua) Eval(code string) (returns []interface{}, err error) {
-	defer func() {
-		if e := recover(); e != nil {
-			returns = nil
-			err = e.(error)
-		}
-	}()
+	l.err = nil
 	C.push_errfunc(l.State)
 	curTop := C.lua_gettop(l.State)
 	cCode := cstr(code)
@@ -258,6 +254,8 @@ func (l *Lua) Eval(code string) (returns []interface{}, err error) {
 	if ret := C.lua_pcall(l.State, 0, C.LUA_MULTRET, -2); ret != 0 {
 		// error occured
 		return nil, fmt.Errorf("CALL ERROR: %s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
+	} else if l.err != nil { // error raise by invokeGoFunc
+		return nil, l.err
 	} else {
 		// return values
 		nReturn := C.lua_gettop(l.State) - curTop
