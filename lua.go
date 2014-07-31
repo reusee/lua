@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"unsafe"
 )
 
@@ -547,13 +548,19 @@ func (l *Lua) Close() {
 }
 
 var cstrs = make(map[string]*C.char)
+var cstrsLock sync.RWMutex
 
 func cstr(str string) *C.char {
-	if c, ok := cstrs[str]; ok {
+	cstrsLock.RLock()
+	c, ok := cstrs[str]
+	cstrsLock.RUnlock()
+	if ok {
 		return c
 	}
-	c := C.CString(str)
+	c = C.CString(str)
+	cstrsLock.Lock()
 	cstrs[str] = c
+	cstrsLock.Unlock()
 	return c
 }
 
