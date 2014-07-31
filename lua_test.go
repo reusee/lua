@@ -425,3 +425,29 @@ func TestCall(t *testing.T) {
 		t.Fatalf("result error")
 	}
 }
+
+func TestEvalEnvs(t *testing.T) {
+	l, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	// bind
+	ret, err := l.Peval(`return V`, "V", 42)
+	if err != nil || ret[0].(float64) != 42 {
+		t.Fatalf("V is not 42 or error %v", err)
+	}
+
+	// global vars
+	l.Set("foo", 42)
+	ret, err = l.Peval(`return foo + bar`, "bar", 42)
+	if err != nil || ret[0].(float64) != 84 {
+		t.Fatalf("return is not 84 or error %v", err)
+	}
+	// env scope
+	ret, err = l.Peval(`return bar`)
+	if err != nil || ret[0] != nil {
+		t.Fatalf("bar is leak to global or error %v", err)
+	}
+}

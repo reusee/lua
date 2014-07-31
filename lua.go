@@ -49,7 +49,7 @@ func New() (*Lua, error) {
 // set lua variable. no panic when error occur.
 func (l *Lua) Pset(args ...interface{}) error {
 	if len(args)%2 != 0 {
-		return fmt.Errorf("number of arguments not match, check your program.")
+		return fmt.Errorf("number of arguments not match.")
 	}
 	for i := 0; i < len(args); i += 2 {
 		name, ok := args[i].(string)
@@ -242,7 +242,11 @@ func invokeGoFunc(state *C.lua_State) int {
 				err, function.lua.getStackTraceback())
 			return 0
 		}
-		args = append(args, goValue)
+		if goValue != nil {
+			args = append(args, *goValue)
+		} else {
+			args = append(args, reflect.Zero(function.funcType.In(int(i-1))))
+		}
 	}
 	// call and returns
 	returnValues := function.funcValue.Call(args)
@@ -253,13 +257,42 @@ func invokeGoFunc(state *C.lua_State) int {
 }
 
 // evaluate lua code. no panic when error occur.
-func (l *Lua) Peval(code string) (returns []interface{}, err error) {
+func (l *Lua) Peval(code string, envs ...interface{}) (returns []interface{}, err error) {
 	C.push_errfunc(l.State)
 	curTop := C.lua_gettop(l.State)
+	// parse
 	cCode := cstr(code)
 	if ret := C.luaL_loadstring(l.State, cCode); ret != 0 { // load error
 		return nil, fmt.Errorf("LOAD ERROR: %s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
 	}
+	// env
+	if len(envs) > 0 {
+		if len(envs)%2 != 0 {
+			return nil, fmt.Errorf("number of arguments not match.")
+		}
+		C.lua_createtable(l.State, 0, 0)
+		for i := 0; i < len(envs); i += 2 {
+			name, ok := envs[i].(string)
+			if !ok {
+				return nil, fmt.Errorf("name must be string, not %v", envs[i])
+			}
+			C.lua_pushstring(l.State, cstr(name))
+			err := l.pushGoValue(envs[i+1], name)
+			if err != nil {
+				return nil, err
+			}
+			C.lua_rawset(l.State, -3)
+		}
+		// set env's metatable to _G
+		C.lua_createtable(l.State, 0, 0)
+		C.lua_pushstring(l.State, cstr("__index"))
+		C.lua_getfield(l.State, C.LUA_GLOBALSINDEX, cstr("_G"))
+		C.lua_rawset(l.State, -3)
+		C.lua_setmetatable(l.State, -2)
+		// set env
+		C.lua_setfenv(l.State, -2)
+	}
+	// call
 	l.err = nil
 	if ret := C.lua_pcall(l.State, 0, C.LUA_MULTRET, -2); ret != 0 {
 		// error occured
@@ -278,15 +311,19 @@ func (l *Lua) Peval(code string) (returns []interface{}, err error) {
 			if err != nil {
 				return nil, err
 			}
-			returns[int(nReturn-1-i)] = value.Interface()
+			if value != nil {
+				returns[int(nReturn-1-i)] = value.Interface()
+			} else {
+				returns[int(nReturn-1-i)] = nil
+			}
 		}
 	}
 	return
 }
 
 // evaluate lua code. panic if error occur.
-func (l *Lua) Eval(code string) []interface{} {
-	ret, err := l.Peval(code)
+func (l *Lua) Eval(code string, envs ...interface{}) []interface{} {
+	ret, err := l.Peval(code, envs...)
 	if err != nil {
 		panic(err)
 	}
@@ -299,7 +336,7 @@ var floatType = reflect.TypeOf(float64(0))
 var boolType = reflect.TypeOf(true)
 var interfaceType = reflect.TypeOf((*interface{})(nil)).Elem()
 
-func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret reflect.Value, err error) {
+func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret *reflect.Value, err error) {
 	luaType := C.lua_type(l.State, i)
 	paramKind := paramType.Kind()
 	switch paramKind {
@@ -308,43 +345,53 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret reflect.Value, err
 			err = fmt.Errorf("not a boolean")
 			return
 		}
-		ret = reflect.ValueOf(C.lua_toboolean(l.State, i) == C.int(1))
+		v := reflect.ValueOf(C.lua_toboolean(l.State, i) == C.int(1))
+		ret = &v
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		if luaType != C.LUA_TNUMBER {
 			err = fmt.Errorf("not an integer")
 			return
 		}
-		ret = reflect.New(paramType).Elem()
-		ret.SetInt(int64(C.lua_tointeger(l.State, i)))
+		v := reflect.New(paramType).Elem()
+		v.SetInt(int64(C.lua_tointeger(l.State, i)))
+		ret = &v
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		if luaType != C.LUA_TNUMBER {
 			err = fmt.Errorf("not a unsigned")
 			return
 		}
-		ret = reflect.New(paramType).Elem()
-		ret.SetUint(uint64(C.lua_tointeger(l.State, i)))
+		v := reflect.New(paramType).Elem()
+		v.SetUint(uint64(C.lua_tointeger(l.State, i)))
+		ret = &v
 	case reflect.Float32, reflect.Float64:
 		if luaType != C.LUA_TNUMBER {
 			err = fmt.Errorf("not a float")
 			return
 		}
-		ret = reflect.New(paramType).Elem()
-		ret.SetFloat(float64(C.lua_tonumber(l.State, i)))
+		v := reflect.New(paramType).Elem()
+		v.SetFloat(float64(C.lua_tonumber(l.State, i)))
+		ret = &v
 	case reflect.Interface:
 		switch paramType {
 		case interfaceType:
 			switch luaType {
 			case C.LUA_TNUMBER:
-				ret = reflect.New(floatType).Elem() // always return float64 for interface{}
-				ret.SetFloat(float64(C.lua_tonumber(l.State, i)))
+				v := reflect.New(floatType).Elem() // always return float64 for interface{}
+				v.SetFloat(float64(C.lua_tonumber(l.State, i)))
+				ret = &v
 			case C.LUA_TSTRING:
-				ret = reflect.New(stringType).Elem()
-				ret.SetString(C.GoString(C.lua_tolstring(l.State, i, nil)))
+				v := reflect.New(stringType).Elem()
+				v.SetString(C.GoString(C.lua_tolstring(l.State, i, nil)))
+				ret = &v
 			case C.LUA_TLIGHTUSERDATA:
-				ret = reflect.ValueOf(C.lua_topointer(l.State, i))
+				v := reflect.ValueOf(C.lua_topointer(l.State, i))
+				ret = &v
 			case C.LUA_TBOOLEAN:
-				ret = reflect.New(boolType).Elem()
-				ret.SetBool(C.lua_toboolean(l.State, i) == C.int(1))
+				v := reflect.New(boolType).Elem()
+				v.SetBool(C.lua_toboolean(l.State, i) == C.int(1))
+				ret = &v
+			case C.LUA_TNIL:
+				ret = nil
 			default:
 				err = fmt.Errorf("unsupported value for interface{}, %v", paramKind)
 				return
@@ -358,16 +405,18 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret reflect.Value, err
 			err = fmt.Errorf("not a string")
 			return
 		}
-		ret = reflect.New(paramType).Elem()
-		ret.SetString(C.GoString(C.lua_tolstring(l.State, i, nil)))
+		v := reflect.New(paramType).Elem()
+		v.SetString(C.GoString(C.lua_tolstring(l.State, i, nil)))
+		ret = &v
 	case reflect.Slice:
 		switch luaType {
 		case C.LUA_TSTRING:
-			ret = reflect.New(paramType).Elem()
+			v := reflect.New(paramType).Elem()
 			cstr := C.lua_tolstring(l.State, i, nil)
-			ret.SetBytes(C.GoBytes(unsafe.Pointer(cstr), C.int(C.strlen(cstr))))
+			v.SetBytes(C.GoBytes(unsafe.Pointer(cstr), C.int(C.strlen(cstr))))
+			ret = &v
 		case C.LUA_TTABLE:
-			ret = reflect.MakeSlice(paramType, 0, 0)
+			v := reflect.MakeSlice(paramType, 0, 0)
 			C.lua_pushnil(l.State)
 			elemType := paramType.Elem()
 			for C.lua_next(l.State, i) != 0 {
@@ -376,8 +425,13 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret reflect.Value, err
 					err = e
 					return
 				}
-				ret = reflect.Append(ret, elemValue)
+				if elemValue != nil {
+					v = reflect.Append(v, *elemValue)
+				} else {
+					v = reflect.Append(v, reflect.Zero(elemType))
+				}
 				C.lua_settop(l.State, -2)
+				ret = &v
 			}
 		default:
 			err = fmt.Errorf("wrong slice argument")
@@ -388,13 +442,14 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret reflect.Value, err
 			err = fmt.Errorf("not a pointer")
 			return
 		}
-		ret = reflect.ValueOf(C.lua_topointer(l.State, i))
+		v := reflect.ValueOf(C.lua_topointer(l.State, i))
+		ret = &v
 	case reflect.Map:
 		if luaType != C.LUA_TTABLE {
 			err = fmt.Errorf("not a map")
 			return
 		}
-		ret = reflect.MakeMap(paramType)
+		v := reflect.MakeMap(paramType)
 		C.lua_pushnil(l.State)
 		keyType := paramType.Key()
 		elemType := paramType.Elem()
@@ -404,16 +459,26 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret reflect.Value, err
 				err = e
 				return
 			}
+			if keyValue == nil {
+				err = fmt.Errorf("map key must not be nil")
+				return
+			}
 			elemValue, e := l.toGoValue(-1, elemType)
 			if e != nil {
 				err = e
 				return
 			}
-			ret.SetMapIndex(keyValue, elemValue)
+			if elemValue != nil {
+				v.SetMapIndex(*keyValue, *elemValue)
+			} else {
+				v.SetMapIndex(*keyValue, reflect.Zero(elemType))
+			}
 			C.lua_settop(l.State, -2)
 		}
+		ret = &v
 	case reflect.UnsafePointer:
-		ret = reflect.ValueOf(C.lua_topointer(l.State, i))
+		v := reflect.ValueOf(C.lua_topointer(l.State, i))
+		ret = &v
 	default:
 		err = fmt.Errorf("unknown argument type %v", paramType)
 		return
@@ -421,6 +486,7 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret reflect.Value, err
 	return
 }
 
+// call lua function. no panic
 func (l *Lua) Pcall(fullname string, args ...interface{}) ([]interface{}, error) {
 	C.push_errfunc(l.State)
 	curTop := C.lua_gettop(l.State)
@@ -471,6 +537,7 @@ func (l *Lua) Pcall(fullname string, args ...interface{}) ([]interface{}, error)
 	return nil, nil
 }
 
+// call lua function. panic if error
 func (l *Lua) Call(fullname string, args ...interface{}) []interface{} {
 	ret, err := l.Pcall(fullname, args...)
 	if err != nil {
