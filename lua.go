@@ -128,6 +128,10 @@ func (l *Lua) set(fullname string, v interface{}) error {
 }
 
 func (l *Lua) pushGoValue(v interface{}, name string) error {
+	if v == nil {
+		C.lua_pushnil(l.State)
+		return nil
+	}
 	switch value := v.(type) {
 	case bool:
 		if value {
@@ -193,16 +197,17 @@ func (l *Lua) pushGoValue(v interface{}, name string) error {
 				}
 				C.lua_settable(l.State, -3)
 			}
-		case reflect.Interface:
-			err := l.pushGoValue(reflect.ValueOf(v).Elem(), "")
-			if err != nil {
-				return err
-			}
+		// IMPOSSIBLE
+		//case reflect.Interface:
+		//	err := l.pushGoValue(reflect.ValueOf(v).Elem(), "")
+		//	if err != nil {
+		//		return err
+		//	}
 		case reflect.Ptr:
 			C.lua_pushlightuserdata(l.State, unsafe.Pointer(reflect.ValueOf(v).Pointer()))
 		default:
 			// unknown type
-			panic(fmt.Sprintf("fixme, %v not handle", v))
+			return fmt.Errorf("unsupported type %v", v)
 		}
 	}
 	return nil
@@ -393,7 +398,7 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret *reflect.Value, er
 			case C.LUA_TNIL:
 				ret = nil
 			default:
-				err = fmt.Errorf("unsupported value for interface{}, %v", paramKind)
+				err = fmt.Errorf("unsupported type %s for interface{}", luaTypeName(luaType))
 				return
 			}
 		default:
@@ -425,11 +430,8 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret *reflect.Value, er
 					err = e
 					return
 				}
-				if elemValue != nil {
-					v = reflect.Append(v, *elemValue)
-				} else {
-					v = reflect.Append(v, reflect.Zero(elemType))
-				}
+				// there is no nil value in lua table so elemValue will never be nil
+				v = reflect.Append(v, *elemValue)
 				C.lua_settop(l.State, -2)
 				ret = &v
 			}
@@ -442,7 +444,8 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret *reflect.Value, er
 			err = fmt.Errorf("not a pointer")
 			return
 		}
-		v := reflect.ValueOf(C.lua_topointer(l.State, i))
+		p := C.lua_topointer(l.State, i)
+		v := reflect.NewAt(paramType, unsafe.Pointer(&p)).Elem()
 		ret = &v
 	case reflect.Map:
 		if luaType != C.LUA_TTABLE {
@@ -459,20 +462,14 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret *reflect.Value, er
 				err = e
 				return
 			}
-			if keyValue == nil {
-				err = fmt.Errorf("map key must not be nil")
-				return
-			}
+			// table has no nil key so keyValue will not be nil
 			elemValue, e := l.toGoValue(-1, elemType)
 			if e != nil {
 				err = e
 				return
 			}
-			if elemValue != nil {
-				v.SetMapIndex(*keyValue, *elemValue)
-			} else {
-				v.SetMapIndex(*keyValue, reflect.Zero(elemType))
-			}
+			// table has no nil value so elemValue will not be nil
+			v.SetMapIndex(*keyValue, *elemValue)
 			C.lua_settop(l.State, -2)
 		}
 		ret = &v
@@ -480,14 +477,14 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret *reflect.Value, er
 		v := reflect.ValueOf(C.lua_topointer(l.State, i))
 		ret = &v
 	default:
-		err = fmt.Errorf("unknown argument type %v", paramType)
+		err = fmt.Errorf("unsupported toGoValue type %v", paramType)
 		return
 	}
 	return
 }
 
 // call lua function. no panic
-func (l *Lua) Pcall(fullname string, args ...interface{}) ([]interface{}, error) {
+func (l *Lua) Pcall(fullname string, args ...interface{}) (returns []interface{}, err error) {
 	C.push_errfunc(l.State)
 	curTop := C.lua_gettop(l.State)
 	// get function
@@ -524,7 +521,7 @@ func (l *Lua) Pcall(fullname string, args ...interface{}) ([]interface{}, error)
 		if nReturn < 0 {
 			return nil, fmt.Errorf("wrong number of return values. corrupted stack.")
 		}
-		returns := make([]interface{}, int(nReturn))
+		returns = make([]interface{}, int(nReturn))
 		for i := C.int(0); i < nReturn; i++ {
 			value, err := l.toGoValue(-1-i, interfaceType)
 			if err != nil {
@@ -532,9 +529,8 @@ func (l *Lua) Pcall(fullname string, args ...interface{}) ([]interface{}, error)
 			}
 			returns[int(nReturn-1-i)] = value.Interface()
 		}
-		return returns, nil
 	}
-	return nil, nil
+	return
 }
 
 // call lua function. panic if error
@@ -559,4 +555,40 @@ func cstr(str string) *C.char {
 	c := C.CString(str)
 	cstrs[str] = c
 	return c
+}
+
+func luaTypeName(t C.int) (ret string) {
+	switch t {
+	case C.LUA_TNIL:
+		ret = "NIL"
+	case C.LUA_TBOOLEAN:
+		ret = "BOOLEAN"
+	case C.LUA_TLIGHTUSERDATA:
+		ret = "LIGHTUSERDATA"
+	case C.LUA_TNUMBER:
+		ret = "NUMBER"
+	case C.LUA_TSTRING:
+		ret = "STRING"
+	case C.LUA_TTABLE:
+		ret = "TABLE"
+	case C.LUA_TFUNCTION:
+		ret = "FUNCTION"
+	case C.LUA_TUSERDATA:
+		ret = "USERDATA"
+	case C.LUA_TTHREAD:
+		ret = "THREAD"
+	}
+	return
+}
+
+func coverLuaTypeName() {
+	luaTypeName(C.LUA_TNIL)
+	luaTypeName(C.LUA_TBOOLEAN)
+	luaTypeName(C.LUA_TLIGHTUSERDATA)
+	luaTypeName(C.LUA_TNUMBER)
+	luaTypeName(C.LUA_TSTRING)
+	luaTypeName(C.LUA_TTABLE)
+	luaTypeName(C.LUA_TFUNCTION)
+	luaTypeName(C.LUA_TUSERDATA)
+	luaTypeName(C.LUA_TTHREAD)
 }

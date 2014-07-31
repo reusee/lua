@@ -450,4 +450,289 @@ func TestEvalEnvs(t *testing.T) {
 	if err != nil || ret[0] != nil {
 		t.Fatalf("bar is leak to global or error %v", err)
 	}
+
+	// bad envs arg
+	_, err = l.Peval(`return 42`, "foo")
+	if err == nil || !strings.Contains(err.Error(), "number of arguments not match") {
+		t.Fatalf("allowing bad envs args")
+	}
+	_, err = l.Peval(`return true`, 42, 42)
+	if err == nil || !strings.Contains(err.Error(), "name must be string") {
+		t.Fatalf("allowing bad envs args")
+	}
+}
+
+func TestPanic(t *testing.T) {
+	l, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	func() {
+		defer func() {
+			if e := recover(); e == nil {
+				t.Fatalf("Set no panic")
+			}
+		}()
+		l.Set("foo") // bad argc
+	}()
+
+	func() {
+		defer func() {
+			if e := recover(); e == nil {
+				t.Fatalf("Eval no panic")
+			}
+		}()
+		l.Eval(`foo()`)
+	}()
+
+	func() {
+		defer func() {
+			if e := recover(); e == nil {
+				t.Fatalf("Call no panic")
+			}
+		}()
+		l.Call("none")
+	}()
+}
+
+func TestTypeConvert(t *testing.T) {
+	l, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	// go value to lua value
+	l.Eval(`
+	function foo(...)
+		for i, v in ipairs({...}) do
+			if v ~= 42 then error('not 42') end
+		end
+	end
+	`)
+	i := 42
+	var ii interface{}
+	ii = i
+	_, err = l.Pcall("foo",
+		int8(42),
+		int16(42),
+		int32(42),
+		int64(42),
+		uint(42),
+		uint8(42),
+		uint16(42),
+		uint32(42),
+		uint64(42),
+		float32(42),
+		float64(42),
+		ii,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// nil value
+	l.Set("bar", func(i interface{}) {
+		if i != nil {
+			t.Fatalf("not nil")
+		}
+	})
+	_, err = l.Peval(`bar(nil)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// lua value to go value
+	l.Set("baz", func(i1 uint, i2 uint8, i3 uint16, i4 uint32, i5 uint64,
+		i6 float32, i7 float64) {
+		if i1 != 42 {
+			t.Fatalf("wrong arg")
+		}
+		if i2 != 42 {
+			t.Fatalf("wrong arg")
+		}
+		if i3 != 42 {
+			t.Fatalf("wrong arg")
+		}
+		if i4 != 42 {
+			t.Fatalf("wrong arg")
+		}
+		if i5 != 42 {
+			t.Fatalf("wrong arg")
+		}
+		if i6 != 42 {
+			t.Fatalf("wrong arg")
+		}
+		if i7 != 42 {
+			t.Fatalf("wrong arg")
+		}
+	})
+	_, err = l.Peval(`baz(42, 42, 42, 42, 42, 42, 42)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// byte slice
+	l.Set("baz", func(bs []byte) {
+		if string(bs) != "foobarbaz" {
+			t.Fatalf("bytes is not foobarbaz")
+		}
+	})
+	_, err = l.Peval(`baz('foobarbaz')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// pointer
+	i = 42
+	l.Set("ip", &i)
+	l.Set("baz", func(ip *int) {
+		if *ip != 42 {
+			t.Fatalf("not point to 42")
+		}
+	})
+	l.Eval(`baz(ip)`)
+	l.Set("baz", func(ip unsafe.Pointer) {
+		if *(*int)(ip) != 42 {
+			t.Fatalf("not point to 42")
+		}
+	})
+	l.Eval(`baz(ip)`)
+
+	// map
+	l.Set("baz", func(m map[string]int) {
+		if len(m) != 3 {
+			t.Fatalf("map is not 3 sized")
+		}
+		if m["foo"] != 42 || m["bar"] != 42 || m["baz"] != 42 {
+			t.Fatalf("map value error")
+		}
+	})
+	l.Eval(`baz{
+		foo = 42,
+		bar = 42,
+		baz = 42,
+	}`)
+
+	// wrong type
+	l.Set("baz", func(b bool) {})
+	_, err = l.Pcall("baz", 42)
+	if err == nil || !strings.Contains(err.Error(), "not a boolean") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+	l.Set("baz", func(arg uint) {})
+	_, err = l.Pcall("baz", true)
+	if err == nil || !strings.Contains(err.Error(), "not a unsigned") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+	l.Set("baz", func(arg float64) {})
+	_, err = l.Pcall("baz", true)
+	if err == nil || !strings.Contains(err.Error(), "not a float") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+	l.Set("baz", func(arg string) {})
+	_, err = l.Pcall("baz", 42)
+	if err == nil || !strings.Contains(err.Error(), "not a string") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+	l.Set("baz", func(arg []int) {})
+	_, err = l.Pcall("baz", 42)
+	if err == nil || !strings.Contains(err.Error(), "wrong slice argument") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+	l.Set("baz", func(arg *int) {})
+	_, err = l.Pcall("baz", 42)
+	if err == nil || !strings.Contains(err.Error(), "not a pointer") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+	l.Set("baz", func(arg map[int]int) {})
+	_, err = l.Pcall("baz", 42)
+	if err == nil || !strings.Contains(err.Error(), "not a map") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+
+	// unsupported interface
+	l.Set("baz", func(arg error) {})
+	_, err = l.Pcall("baz", fmt.Errorf("error"))
+	if err == nil || !strings.Contains(err.Error(), "only interface{} is supported, no error") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+	l.Set("baz", func(i interface{}) {})
+	_, err = l.Peval(`baz(function()end)`)
+	if err == nil || !strings.Contains(err.Error(), "unsupported type FUNCTION for interface{}") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+
+	// unsupported type
+	err = l.Pset("foo", struct{}{})
+	if err == nil || !strings.Contains(err.Error(), "unsupported type") {
+		t.Fatalf("allowing unsupported type or error %v", err)
+	}
+	err = l.Pset("foo", []struct{}{struct{}{}})
+	if err == nil || !strings.Contains(err.Error(), "unsupported type") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+	l.Set(`foo`, func(arg []interface{}) {})
+	_, err = l.Pcall("foo", []interface{}{func() {}})
+	if err == nil || !strings.Contains(err.Error(), "unsupported type FUNCTION for interface{}") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+	_, err = l.Peval("foo(T)", "T", []interface{}{func() {}})
+	if err == nil || !strings.Contains(err.Error(), "unsupported type FUNCTION for interface{}") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+	_, err = l.Peval(`return (function() end)`)
+	if err == nil || !strings.Contains(err.Error(), "unsupported type FUNCTION for interface{}") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+	_, err = l.Peval(`return T`, "T", struct{}{})
+	if err == nil || !strings.Contains(err.Error(), "unsupported type") {
+		t.Fatalf("allowing unsupported type or error %v", err)
+	}
+	l.Set("foo", func(arg func()) {})
+	_, err = l.Pcall("foo", func(){})
+	if err == nil || !strings.Contains(err.Error(), "unsupported toGoValue type func()") {
+		t.Fatalf("allowing unsupported type or error %v", err)
+	}
+	l.Set("foo", func(arg map[string]func()){})
+	_, err = l.Peval(`foo{k = function()end}`)
+	if err == nil || !strings.Contains(err.Error(), "unsupported toGoValue type func()") {
+		t.Fatalf("allowing unsupported type or error %v", err)
+	}
+	l.Set("foo", func(arg map[interface{}]interface{}){})
+	_, err = l.Peval(`foo{[function()end] = 5}`)
+	if err == nil || !strings.Contains(err.Error(), "unsupported type FUNCTION for interface{}") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+	l.Eval(`function foo() return (function() end) end`)
+	_, err = l.Pcall("foo")
+	if err == nil || !strings.Contains(err.Error(), "unsupported type FUNCTION for interface{}") {
+		t.Fatalf("allowing wrong type of arg or error %v", err)
+	}
+
+	// int slice
+	l.Set("baz", func(s []int) {
+		if len(s) != 3 {
+			t.Fatalf("slice is not 3 sized")
+		}
+		for _, i := range s {
+			if i != 42 {
+				t.Fatalf("slice elem is not 42")
+			}
+		}
+	})
+	l.Eval(`baz{42, 42, 42}`)
+
+	// nil
+	l.Set("baz", func(i interface{}) {
+		if i != nil {
+			t.Fatalf("i is not nil")
+		}
+	})
+	l.Call("baz", nil)
+
+	// type name
+	coverLuaTypeName()
 }
