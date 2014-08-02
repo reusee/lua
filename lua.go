@@ -10,6 +10,9 @@ package lua
 void push_go_func(lua_State*, void*);
 void push_errfunc(lua_State*);
 
+lua_State* new_state();
+char* ensure_name(lua_State*, char*);
+
 #cgo pkg-config: luajit
 */
 import "C"
@@ -37,11 +40,10 @@ type _Function struct {
 }
 
 func New() (*Lua, error) {
-	state := C.luaL_newstate()
+	state := C.new_state()
 	if state == nil {
 		return nil, fmt.Errorf("lua newstate")
 	}
-	C.luaL_openlibs(state)
 	lua := &Lua{
 		State: state,
 	}
@@ -75,46 +77,11 @@ func (l *Lua) Set(args ...interface{}) {
 }
 
 func (l *Lua) set(fullname string, v interface{}) error {
-	// resolve name
-	path := strings.Split(fullname, ".")
-	name := path[len(path)-1]
-	path = path[:len(path)-1]
-	if len(path) == 0 {
-		path = append(path, "_G")
+	// ensure name
+	errMsg := C.ensure_name(l.State, C.CString(fullname))
+	if errMsg != nil {
+		return fmt.Errorf("%s: %s", errMsg, fullname)
 	}
-
-	// ensure namespaces(table)
-	for i, namespace := range path {
-		cNamespace := cstr(namespace)
-		if i == 0 { // top level namespace
-			C.lua_getfield(l.State, C.LUA_GLOBALSINDEX, cNamespace)
-			if t := C.lua_type(l.State, -1); t == C.LUA_TNIL { // not exists, create new
-				C.lua_settop(l.State, -2)
-				C.lua_createtable(l.State, 0, 0)
-				C.lua_setfield(l.State, C.LUA_GLOBALSINDEX, cNamespace)
-				C.lua_getfield(l.State, C.LUA_GLOBALSINDEX, cNamespace) // set as current namespace
-			} else if t != C.LUA_TTABLE { // not a table
-				return fmt.Errorf("global %s is not a table", namespace)
-			}
-		} else { // sub namespace
-			C.lua_pushstring(l.State, cNamespace)
-			C.lua_gettable(l.State, -2)
-			if t := C.lua_type(l.State, -1); t == C.LUA_TNIL { // not exists, create new
-				C.lua_settop(l.State, -2)
-				C.lua_pushstring(l.State, cNamespace)
-				C.lua_createtable(l.State, 0, 0)
-				C.lua_rawset(l.State, -3)
-				C.lua_pushstring(l.State, cNamespace) // set as current namespace
-				C.lua_gettable(l.State, -2)
-			} else if t != C.LUA_TTABLE { // not a table
-				return fmt.Errorf("namespace %s is not a table", strings.Join(path[:i+1], "."))
-			}
-		}
-	}
-
-	// push name
-	cName := cstr(name)
-	C.lua_pushstring(l.State, cName)
 
 	// push value
 	err := l.pushGoValue(v, fullname)
@@ -124,7 +91,8 @@ func (l *Lua) set(fullname string, v interface{}) error {
 
 	// set
 	C.lua_rawset(l.State, -3)
-	C.lua_settop(l.State, -2) // unload namespace
+	// clear stack
+	C.lua_settop(l.State, 0)
 
 	return nil
 }

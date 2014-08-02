@@ -1,4 +1,8 @@
 #include "lua.h"
+#include <lauxlib.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 extern int invokeGoFunc(lua_State*);
 
@@ -19,4 +23,46 @@ int traceback(lua_State *l) {
 
 void push_errfunc(lua_State *l) {
   lua_pushcfunction(l, traceback);
+}
+
+lua_State* new_state() {
+  lua_State *state = luaL_newstate();
+  if (state == NULL) {
+    return NULL;
+  }
+  luaL_openlibs(state);
+  return state;
+}
+
+char* ensure_name(lua_State *l, char *fullname) {
+  char *name, *next;
+  int type;
+
+  lua_getfield(l, LUA_GLOBALSINDEX, "_G");
+
+  name = strtok(fullname, ".");
+  next = strtok(NULL, ".");
+  while (name != NULL) {
+    if (next == NULL) { // variable name
+      lua_pushstring(l, name); // push as key
+    } else { // namespace
+      lua_pushstring(l, name);
+      lua_rawget(l, -2);
+      type = lua_type(l, -1);
+      if (type == LUA_TNIL) { // not exists, create new
+        lua_settop(l, -2);
+        lua_pushstring(l, name);
+        lua_createtable(l, 0, 0);
+        lua_rawset(l, -3);
+        lua_pushstring(l, name);
+        lua_rawget(l, -2);
+      } else if (type != LUA_TTABLE) { // not a table
+        return "invalid namespace";
+      }
+    }
+    name = next;
+    next = strtok(NULL, ".");
+  }
+
+  return NULL;
 }
