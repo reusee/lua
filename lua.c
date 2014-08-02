@@ -35,7 +35,7 @@ lua_State* new_state() {
 }
 
 char* ensure_name(lua_State *l, char *fullname) {
-  char *name, *next;
+  char *name, *next, *p = fullname;
   int type;
 
   lua_getfield(l, LUA_GLOBALSINDEX, "_G");
@@ -64,5 +64,6 @@ char* ensure_name(lua_State *l, char *fullname) {
     next = strtok(NULL, ".");
   }
 
+  free(p);
   return NULL;
 }
