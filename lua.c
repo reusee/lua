@@ -67,3 +67,14 @@ char* ensure_name(lua_State *l, char *fullname) {
   free(p);
   return NULL;
 }
+
+void set_eval_env(lua_State *l) {
+  // set env's metatable to _G
+  lua_createtable(l, 0, 0);
+  lua_pushstring(l, "__index");
+  lua_getfield(l, LUA_GLOBALSINDEX, "_G");
+  lua_rawset(l, -3);
+  lua_setmetatable(l, -2);
+  // set function env
+  lua_setfenv(l, -2);
+}

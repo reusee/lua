@@ -12,6 +12,7 @@ void push_errfunc(lua_State*);
 
 lua_State* new_state();
 char* ensure_name(lua_State*, char*);
+void set_eval_env(lua_State*);
 
 #cgo pkg-config: luajit
 */
@@ -254,14 +255,8 @@ func (l *Lua) Peval(code string, envs ...interface{}) (returns []interface{}, er
 			}
 			C.lua_rawset(l.State, -3)
 		}
-		// set env's metatable to _G
-		C.lua_createtable(l.State, 0, 0)
-		C.lua_pushstring(l.State, cstr("__index"))
-		C.lua_getfield(l.State, C.LUA_GLOBALSINDEX, cstr("_G"))
-		C.lua_rawset(l.State, -3)
-		C.lua_setmetatable(l.State, -2)
 		// set env
-		C.lua_setfenv(l.State, -2)
+		C.set_eval_env(l.State)
 	}
 	// call
 	l.err = nil
