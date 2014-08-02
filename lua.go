@@ -167,12 +167,6 @@ func (l *Lua) pushGoValue(v interface{}, name string) error {
 				}
 				C.lua_settable(l.State, -3)
 			}
-		// IMPOSSIBLE
-		//case reflect.Interface:
-		//	err := l.pushGoValue(reflect.ValueOf(v).Elem(), "")
-		//	if err != nil {
-		//		return err
-		//	}
 		case reflect.Ptr:
 			C.lua_pushlightuserdata(l.State, unsafe.Pointer(reflect.ValueOf(v).Pointer()))
 		default:
@@ -233,6 +227,7 @@ func invokeGoFunc(state *C.lua_State) int {
 
 // evaluate lua code. no panic when error occur.
 func (l *Lua) Peval(code string, envs ...interface{}) (returns []interface{}, err error) {
+	defer C.lua_settop(l.State, 0)
 	C.push_errfunc(l.State)
 	curTop := C.lua_gettop(l.State)
 	// parse
