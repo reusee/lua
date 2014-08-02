@@ -5,6 +5,7 @@ package lua
 #include <lualib.h>
 #include <lauxlib.h>
 #include <string.h>
+#include <stdlib.h>
 
 void push_go_func(lua_State*, void*);
 void push_errfunc(lua_State*);
@@ -267,7 +268,8 @@ func (l *Lua) Peval(code string, envs ...interface{}) (returns []interface{}, er
 	C.push_errfunc(l.State)
 	curTop := C.lua_gettop(l.State)
 	// parse
-	cCode := cstr(code)
+	cCode := C.CString(code)
+	defer C.free(unsafe.Pointer(cCode))
 	if ret := C.luaL_loadstring(l.State, cCode); ret != 0 { // load error
 		return nil, fmt.Errorf("LOAD ERROR: %s", C.GoString(C.lua_tolstring(l.State, -1, nil)))
 	}
