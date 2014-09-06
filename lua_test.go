@@ -692,16 +692,16 @@ func TestTypeConvert(t *testing.T) {
 		t.Fatalf("allowing unsupported type or error %v", err)
 	}
 	l.Set("foo", func(arg func()) {})
-	_, err = l.Pcall("foo", func(){})
+	_, err = l.Pcall("foo", func() {})
 	if err == nil || !strings.Contains(err.Error(), "unsupported toGoValue type func()") {
 		t.Fatalf("allowing unsupported type or error %v", err)
 	}
-	l.Set("foo", func(arg map[string]func()){})
+	l.Set("foo", func(arg map[string]func()) {})
 	_, err = l.Peval(`foo{k = function()end}`)
 	if err == nil || !strings.Contains(err.Error(), "unsupported toGoValue type func()") {
 		t.Fatalf("allowing unsupported type or error %v", err)
 	}
-	l.Set("foo", func(arg map[interface{}]interface{}){})
+	l.Set("foo", func(arg map[interface{}]interface{}) {})
 	_, err = l.Peval(`foo{[function()end] = 5}`)
 	if err == nil || !strings.Contains(err.Error(), "unsupported type FUNCTION for interface{}") {
 		t.Fatalf("allowing wrong type of arg or error %v", err)
@@ -735,4 +735,17 @@ func TestTypeConvert(t *testing.T) {
 
 	// type name
 	coverLuaTypeName()
+}
+
+func TestUnicode(t *testing.T) {
+	l, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	ret := l.Eval(`return T`, "T", "你好")
+	if len(ret) != 1 || ret[0] != "你好" {
+		t.Fatal()
+	}
 }

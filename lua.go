@@ -25,6 +25,7 @@ import (
 	"unsafe"
 )
 
+// Lua struct wraps lua vm state
 type Lua struct {
 	State *C.lua_State
 	funcs []*_Function
@@ -40,6 +41,7 @@ type _Function struct {
 	argc      int
 }
 
+// New creates a new lua vm
 func New() (*Lua, error) {
 	state := C.new_state()
 	if state == nil {
@@ -51,10 +53,10 @@ func New() (*Lua, error) {
 	return lua, nil
 }
 
-// set lua variable. no panic when error occur.
+// Pset sets lua variable. no panic when error occur.
 func (l *Lua) Pset(args ...interface{}) error {
 	if len(args)%2 != 0 {
-		return fmt.Errorf("number of arguments not match.")
+		return fmt.Errorf("number of arguments not match")
 	}
 	for i := 0; i < len(args); i += 2 {
 		name, ok := args[i].(string)
@@ -69,7 +71,7 @@ func (l *Lua) Pset(args ...interface{}) error {
 	return nil
 }
 
-// set lua variable. panic if error occur.
+// Set sets lua variable. panic if error occur.
 func (l *Lua) Set(args ...interface{}) {
 	err := l.Pset(args...)
 	if err != nil {
@@ -226,7 +228,7 @@ func invokeGoFunc(state *C.lua_State) int {
 	return len(returnValues)
 }
 
-// evaluate lua code. no panic when error occur.
+// Peval evaluates a piece of lua code. no panic when error occur.
 func (l *Lua) Peval(code string, envs ...interface{}) (returns []interface{}, err error) {
 	defer C.lua_settop(l.State, 0)
 	C.push_errfunc(l.State)
@@ -240,7 +242,7 @@ func (l *Lua) Peval(code string, envs ...interface{}) (returns []interface{}, er
 	// env
 	if len(envs) > 0 {
 		if len(envs)%2 != 0 {
-			return nil, fmt.Errorf("number of arguments not match.")
+			return nil, fmt.Errorf("number of arguments not match")
 		}
 		C.lua_createtable(l.State, 0, 0)
 		for i := 0; i < len(envs); i += 2 {
@@ -269,7 +271,7 @@ func (l *Lua) Peval(code string, envs ...interface{}) (returns []interface{}, er
 		// return values
 		nReturn := C.lua_gettop(l.State) - curTop
 		if nReturn < 0 {
-			return nil, fmt.Errorf("wrong number of return values. corrupted stack.")
+			return nil, fmt.Errorf("wrong number of return values. corrupted stack")
 		}
 		returns = make([]interface{}, int(nReturn))
 		for i := C.int(0); i < nReturn; i++ {
@@ -287,7 +289,7 @@ func (l *Lua) Peval(code string, envs ...interface{}) (returns []interface{}, er
 	return
 }
 
-// evaluate lua code. panic if error occur.
+// Eval evaluates a piece of lua code. panic if error occur.
 func (l *Lua) Eval(code string, envs ...interface{}) []interface{} {
 	ret, err := l.Peval(code, envs...)
 	if err != nil {
@@ -444,7 +446,7 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret *reflect.Value, er
 	return
 }
 
-// call lua function. no panic
+// Pcall calls a lua function. no panic
 func (l *Lua) Pcall(fullname string, args ...interface{}) (returns []interface{}, err error) {
 	C.push_errfunc(l.State)
 	curTop := C.lua_gettop(l.State)
@@ -480,7 +482,7 @@ func (l *Lua) Pcall(fullname string, args ...interface{}) (returns []interface{}
 		// return values
 		nReturn := C.lua_gettop(l.State) - curTop
 		if nReturn < 0 {
-			return nil, fmt.Errorf("wrong number of return values. corrupted stack.")
+			return nil, fmt.Errorf("wrong number of return values. corrupted stack")
 		}
 		returns = make([]interface{}, int(nReturn))
 		for i := C.int(0); i < nReturn; i++ {
@@ -494,7 +496,7 @@ func (l *Lua) Pcall(fullname string, args ...interface{}) (returns []interface{}
 	return
 }
 
-// call lua function. panic if error
+// Call calls a lua function. panic if error
 func (l *Lua) Call(fullname string, args ...interface{}) []interface{} {
 	ret, err := l.Pcall(fullname, args...)
 	if err != nil {
@@ -503,6 +505,7 @@ func (l *Lua) Call(fullname string, args ...interface{}) []interface{} {
 	return ret
 }
 
+// Close close the lua vm
 func (l *Lua) Close() {
 	C.lua_close(l.State)
 }
