@@ -13,6 +13,14 @@ func TestNew(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.Close()
+
+	tmp := newState
+	newState = dumbNewState
+	l, err = New()
+	if err == nil || err.Error() != "lua newstate" {
+		t.Fatal("should be nil")
+	}
+	newState = tmp
 }
 
 func TestSet(t *testing.T) {

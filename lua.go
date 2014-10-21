@@ -41,9 +41,17 @@ type _Function struct {
 	argc      int
 }
 
+var newState = func() *C.lua_State {
+	return C.new_state()
+}
+
+var dumbNewState = func() *C.lua_State {
+	return nil
+}
+
 // New creates a new lua vm
 func New() (*Lua, error) {
-	state := C.new_state()
+	state := newState()
 	if state == nil {
 		return nil, fmt.Errorf("lua newstate")
 	}
@@ -270,9 +278,6 @@ func (l *Lua) Peval(code string, envs ...interface{}) (returns []interface{}, er
 	} else {
 		// return values
 		nReturn := C.lua_gettop(l.State) - curTop
-		if nReturn < 0 {
-			return nil, fmt.Errorf("wrong number of return values. corrupted stack")
-		}
 		returns = make([]interface{}, int(nReturn))
 		for i := C.int(0); i < nReturn; i++ {
 			value, err := l.toGoValue(-1-i, interfaceType)
@@ -481,9 +486,6 @@ func (l *Lua) Pcall(fullname string, args ...interface{}) (returns []interface{}
 	} else {
 		// return values
 		nReturn := C.lua_gettop(l.State) - curTop
-		if nReturn < 0 {
-			return nil, fmt.Errorf("wrong number of return values. corrupted stack")
-		}
 		returns = make([]interface{}, int(nReturn))
 		for i := C.int(0); i < nReturn; i++ {
 			value, err := l.toGoValue(-1-i, interfaceType)
