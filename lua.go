@@ -356,8 +356,8 @@ func (l *Lua) toGoValue(i C.int, paramType reflect.Type) (ret *reflect.Value, er
 				v := reflect.New(stringType).Elem()
 				v.SetString(C.GoString(C.lua_tolstring(l.State, i, nil)))
 				ret = &v
-			case C.LUA_TLIGHTUSERDATA:
-				v := reflect.ValueOf(C.lua_topointer(l.State, i))
+			case C.LUA_TLIGHTUSERDATA, C.LUA_TUSERDATA:
+				v := reflect.ValueOf(C.lua_touserdata(l.State, i))
 				ret = &v
 			case C.LUA_TBOOLEAN:
 				v := reflect.New(boolType).Elem()
