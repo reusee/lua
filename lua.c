@@ -6,8 +6,8 @@
 
 extern int invokeGoFunc(lua_State*);
 
-void push_go_func(lua_State *l, void* func) {
-  lua_pushlightuserdata(l, func);
+void push_go_func(lua_State *l, int64_t* p) {
+  lua_pushlightuserdata(l, p);
   lua_pushcclosure(l, (lua_CFunction)invokeGoFunc, 1);
 }
 

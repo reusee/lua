@@ -6,8 +6,9 @@ package lua
 #include <lauxlib.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
-void push_go_func(lua_State*, void*);
+void push_go_func(lua_State*, int64_t*);
 void push_errfunc(lua_State*);
 
 lua_State* new_state();
@@ -19,6 +20,7 @@ void set_eval_env(lua_State*);
 import "C"
 import (
 	"fmt"
+	"math/rand"
 	"reflect"
 	"strings"
 	"sync"
@@ -28,7 +30,6 @@ import (
 // Lua struct wraps lua vm state
 type Lua struct {
 	State *C.lua_State
-	funcs []*_Function
 	err   error
 }
 
@@ -47,6 +48,15 @@ var newState = func() *C.lua_State {
 
 var dumbNewState = func() *C.lua_State {
 	return nil
+}
+
+var (
+	funcs     map[int64]*_Function
+	funcsLock sync.RWMutex
+)
+
+func init() {
+	funcs = make(map[int64]*_Function)
 }
 
 // New creates a new lua vm
@@ -164,8 +174,12 @@ func (l *Lua) pushGoValue(v interface{}, name string) error {
 				funcValue: reflect.ValueOf(v),
 				argc:      valueType.NumIn(),
 			}
-			l.funcs = append(l.funcs, function) // hold reference of func
-			C.push_go_func(l.State, unsafe.Pointer(function))
+			funcId := (*C.int64_t)(C.malloc(8))
+			*funcId = C.int64_t(rand.Int63())
+			funcsLock.Lock()
+			funcs[int64(*funcId)] = function
+			funcsLock.Unlock()
+			C.push_go_func(l.State, funcId)
 		case reflect.Slice:
 			value := reflect.ValueOf(v)
 			length := value.Len()
@@ -198,7 +212,9 @@ func (l *Lua) getStackTraceback() string {
 //export invokeGoFunc
 func invokeGoFunc(state *C.lua_State) int {
 	p := C.lua_touserdata(state, C.LUA_GLOBALSINDEX-1)
-	function := (*_Function)(p)
+	funcsLock.RLock()
+	function := funcs[int64(*((*C.int64_t)(p)))]
+	funcsLock.RUnlock()
 	// fast paths
 	switch f := function.fun.(type) {
 	case func():
