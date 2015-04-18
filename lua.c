@@ -3,11 +3,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "_cgo_export.h"
 
-extern int invokeGoFunc(lua_State*);
-
-void push_go_func(lua_State *l, int64_t* p) {
-  lua_pushlightuserdata(l, p);
+void push_go_func(lua_State *l, int64_t id) {
+  lua_pushinteger(l, id);
   lua_pushcclosure(l, (lua_CFunction)invokeGoFunc, 1);
 }
 

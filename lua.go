@@ -8,7 +8,7 @@ package lua
 #include <stdlib.h>
 #include <stdint.h>
 
-void push_go_func(lua_State*, int64_t*);
+void push_go_func(lua_State*, int64_t);
 void push_errfunc(lua_State*);
 
 lua_State* new_state();
@@ -20,7 +20,6 @@ void set_eval_env(lua_State*);
 import "C"
 import (
 	"fmt"
-	"math/rand"
 	"reflect"
 	"strings"
 	"sync"
@@ -51,13 +50,9 @@ var dumbNewState = func() *C.lua_State {
 }
 
 var (
-	funcs     map[int64]*_Function
+	funcs     []*_Function
 	funcsLock sync.RWMutex
 )
-
-func init() {
-	funcs = make(map[int64]*_Function)
-}
 
 // New creates a new lua vm
 func New() (*Lua, error) {
@@ -174,12 +169,11 @@ func (l *Lua) pushGoValue(v interface{}, name string) error {
 				funcValue: reflect.ValueOf(v),
 				argc:      valueType.NumIn(),
 			}
-			funcId := (*C.int64_t)(C.malloc(8))
-			*funcId = C.int64_t(rand.Int63())
 			funcsLock.Lock()
-			funcs[int64(*funcId)] = function
+			funcs = append(funcs, function)
+			id := len(funcs) - 1
 			funcsLock.Unlock()
-			C.push_go_func(l.State, funcId)
+			C.push_go_func(l.State, C.int64_t(id))
 		case reflect.Slice:
 			value := reflect.ValueOf(v)
 			length := value.Len()
@@ -211,9 +205,9 @@ func (l *Lua) getStackTraceback() string {
 
 //export invokeGoFunc
 func invokeGoFunc(state *C.lua_State) int {
-	p := C.lua_touserdata(state, C.LUA_GLOBALSINDEX-1)
+	id := C.lua_tointeger(state, C.LUA_GLOBALSINDEX-1)
 	funcsLock.RLock()
-	function := funcs[int64(*((*C.int64_t)(p)))]
+	function := funcs[id]
 	funcsLock.RUnlock()
 	// fast paths
 	switch f := function.fun.(type) {
